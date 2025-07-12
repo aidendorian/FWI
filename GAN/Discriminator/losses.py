@@ -27,5 +27,9 @@ def gradient_penalty(Discriminator, real_samples, fake_samples):
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
     
-    
-    
+def discrminator_loss(Discriminator, real_samples, fake_samples, lambda_gp=10.0):
+    d_real = Discriminator(real_samples).mean()
+    d_fake = Discriminator(fake_samples).mean()
+    gp = gradient_penalty(Discriminator, real_samples, fake_samples)
+    loss = d_fake - d_real + lambda_gp*gp
+    return loss
