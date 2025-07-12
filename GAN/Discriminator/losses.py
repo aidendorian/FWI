@@ -28,6 +28,14 @@ def gradient_penalty(Discriminator, real_samples, fake_samples):
     return gradient_penalty
     
 def discrminator_loss(Discriminator, real_samples, fake_samples, lambda_gp=10.0):
+    """Computes total discriminator loss
+
+    Args:
+        Discriminator : Discriminator model
+        real_samples : Real earth data from the dataset
+        fake_samples : Generated data from the Generator
+        lambda_gp : Gradient Penalty weight. Defaults to 10.0.
+    """
     d_real = Discriminator(real_samples).mean()
     d_fake = Discriminator(fake_samples).mean()
     gp = gradient_penalty(Discriminator, real_samples, fake_samples)
