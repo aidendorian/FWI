@@ -18,7 +18,7 @@ def data_misfit(predicted_waveform, observed_waveform):
     """
     return torch.nn.functional.mse_loss(predicted_waveform, observed_waveform)
 
-def pde_res(u, Vp, Vs, density, dx=1., dt=1.):
+def pde_res(u, Vs, density, dx=1., dt=1.):
     """Computes Elastic PDE Residual
     
     Args:
@@ -28,8 +28,6 @@ def pde_res(u, Vp, Vs, density, dx=1., dt=1.):
         density : Density of substructure
         dx and dt: Derivatives
     """
-    B, _, T, W = u.shape
-    H = 5
     ux = u[:, :5, :, :]
     uz = u[:, 5:, :, :]
     
@@ -83,6 +81,6 @@ def generator_loss(Discriminator, fake_samples, waveform_pred, waveform_obs, Vp,
     """
     L_adv = adversarial_loss(Discriminator, fake_samples)
     L_data = data_misfit(waveform_pred, waveform_obs)
-    L_pde = pde_res(waveform_pred, Vp, Vs, density)
+    L_pde = pde_res(waveform_pred, Vs, density)
     
     return L_adv + lambda_data * L_data + lambda_pde * L_pde
