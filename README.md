@@ -13,7 +13,44 @@ This repository implements a **Physics-Informed Generative Adversarial Network (
 - **Fully differentiable** end-to-end pipeline using PyTorch 
 
 ---
+## Folder Structure
 
+```
+└── 📁FWI
+    └── 📁data
+        └── 📁source_info
+            ├── data_x_i.npy
+            ├── data_z_i.npy
+        └── 📁velocity_models
+            ├── density_i.npy
+            ├── pm_i.npy
+            ├── vp_i.npy
+            ├── vs_i.npy
+            ├── pr_i.npy
+    └── 📁dataloaders
+        └── 📁__pycache__
+            ├── source_waveforms.cpython-312.pyc
+            ├── velocity_models.cpython-312.pyc
+        ├── source_waveforms.py
+        ├── velocity_models.py
+    └── 📁FNO
+        ├── fno.py
+    └── 📁GAN
+        └── 📁Discriminator
+            └── 📁__pycache__
+                ├── discriminator.cpython-312.pyc
+            ├── discriminator.py
+            ├── losses.py
+        └── 📁Generator
+            └── 📁__pycache__
+                ├── generator.cpython-312.pyc
+            ├── generator.py
+            ├── losses.py
+    ├── generator_model.png
+    └── README.md
+```
+
+---
 ## GAN Architecture Overview
 
 ```
@@ -58,11 +95,12 @@ Seismic Waveforms (uₓ, u_z)
 
 ## Dataset Format
 
-dataset link
+Using E<sup>CFB</sup> dataset from [SMILE Team](https://smileunc.github.io/projects/efwi/datasets)
+
 Each sample consists of:
 
-| File            | Shape             | Description              |
-|-----------------|------------------|--------------------------|
+| File| Shape             | Description              |
+|-----------------|----------------|--------------------------|
 | data_x_i.npy    | [B, 5, 1000, 70]  | uₓ waveform              |
 | data_z_i.npy    | [B, 5, 1000, 70]  | u_z waveform             |
 | vp_i.npy        | [B, 1, 70, 70]    | P-wave velocity          |
