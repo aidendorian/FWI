@@ -82,7 +82,7 @@ class ElasticWaveSolver(torch.nn.Module):
     def forward(self, x):
         x=self.padding(x)
         x_res=self.input_residual(x)
-        x_in=self.input_projection(x)
+        x_in = self.input_projection(x)
         x = self.fno_blocks(x_in+x_res)
         x=self.upsample(x)
         x = self.output_projection(x)
