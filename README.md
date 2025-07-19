@@ -56,27 +56,27 @@ This repository implements a **Physics-Informed Generative Adversarial Network (
 ## GAN Architecture Overview
 
 ```
-Seismic Waveforms (uₓ, u_z)
-          │
-          ▼
-┌───────────────┐
-│ Generator │───> (Vp, Vs, ρ, pr, pm)
-└───────────────┘
-          │
-          ▼
-┌──────────────────────┐
-│ Elastic Wave Solver │ (FNO)
-└──────────────────────┘
-          │
-          ▼
-┌──────────────────────┐
-│ Predicted Waveform û │
-└──────────────────────┘
-          │
-          ▼
-┌──────────────────────┐
-│ Discriminator (WGAN) │
-└──────────────────────┘
+            Seismic Waveforms (uₓ, u_z)
+                      │
+                      ▼
+            ┌───────────────┐
+            │ Generator │───> (Vp, Vs, ρ, pr, pm)
+            └───────────────┘
+                      │
+                      ▼
+            ┌──────────────────────┐
+            │ Elastic Wave Solver │ (FNO)
+            └──────────────────────┘
+                      │
+                      ▼
+            ┌──────────────────────┐
+            │ Predicted Waveform û │
+            └──────────────────────┘
+                      │
+                      ▼
+            ┌──────────────────────┐
+            │ Discriminator (WGAN) │
+            └──────────────────────┘
 ```
 
 ### Loss Functions
@@ -91,7 +91,7 @@ Seismic Waveforms (uₓ, u_z)
 
 ## Dataset Format
 
-Using E`<sup>`CFB`</sup>` dataset from [SMILE Team](https://smileunc.github.io/projects/efwi/datasets)
+Using E<sup>CFB</sup> dataset from [SMILE Team](https://smileunc.github.io/projects/efwi/datasets)
 
 Each sample consists of:
 
@@ -105,7 +105,7 @@ Each sample consists of:
 | pr_i.npy     | [B, 1, 70, 70]   | Poisson's ratio  |
 | pm_i.npy     | [B, 1, 70, 70]   | Young’s modulus |
 
-Inputs to the Generator: uₓ + u_z → [B, 10, 1000, 70]
+Inputs to the Generator: u_x + u_z → [B, 10, 1000, 70]
 Outputs from Generator: [B, 5, 70, 70] → input to FNO for waveform reconstruction
 
 ---
