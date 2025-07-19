@@ -114,4 +114,10 @@ Outputs from Generator: [B, 5, 70, 70] → input to FNO for waveform reconstruct
 
 ---
 
+## To-Do
 
+- [ ] Add Waveform to Spectrogram conversion
+- [ ] FNO losses and Additional Physics constraints
+- [ ] Implement training loops
+- [ ] Add documentation for each module
+- [ ] Documentation for usage and examples
