@@ -18,7 +18,7 @@ def data_misfit(predicted_waveform, observed_waveform):
     """
     return torch.nn.functional.mse_loss(predicted_waveform, observed_waveform)
 
-def pde_res(u, Vs, density, dx=1., dt=1.):
+def pde_res(u, Vp, Vs, density, dx=1., dt=1.):
     """Computes Elastic PDE Residual
     
     Args:
@@ -40,7 +40,7 @@ def pde_res(u, Vs, density, dx=1., dt=1.):
     
     density_exp = density.unsqueeze(2).expand_as(utt[:, 0])
     mu = density*Vs**2
-    lam = density*(Vs**2-2*Vs**2)
+    lam = density*(Vp**2-2*Vs**2)
     mu = mu.unsqueeze(2).expand_as(utt[:, 0])
     lam = lam.unsqueeze(2).expand_as(utt[:, 0])
     
@@ -81,6 +81,6 @@ def generator_loss(Discriminator, fake_samples, waveform_pred, waveform_obs, Vp,
     """
     L_adv = adversarial_loss(Discriminator, fake_samples)
     L_data = data_misfit(waveform_pred, waveform_obs)
-    L_pde = pde_res(waveform_pred, Vs, density)
+    L_pde = pde_res(waveform_pred, Vp, Vs, density)
     
     return L_adv + lambda_data * L_data + lambda_pde * L_pde

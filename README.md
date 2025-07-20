@@ -101,7 +101,7 @@ Each sample consists of:
 | data_z_i.npy | [B, 5, 1000, 70] | u_z waveform     |
 | vp_i.npy     | [B, 1, 70, 70]   | P-wave velocity  |
 | vs_i.npy     | [B, 1, 70, 70]   | S-wave velocity  |
-| rho_i.npy    | [B, 1, 70, 70]   | Density          |
+| density_i.npy    | [B, 1, 70, 70]   | Density          |
 | pr_i.npy     | [B, 1, 70, 70]   | Poisson's ratio  |
 | pm_i.npy     | [B, 1, 70, 70]   | Young’s modulus |
 
