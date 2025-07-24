@@ -54,7 +54,7 @@ def loss(pred_value,obs_value):
         """
      return torch.nn.functional.mse_loss(pred_value,obs_value)
 
-def FNO_loss(Discriminator, Vp,Vs,density,value_pred,value_obs,lambda_data=1.0,lambda_pde=1.0):
+def FNO_loss(Vp,Vs,density,value_pred,value_obs,lambda_data=1.0,lambda_pde=1.0):
     """Args:
     Discriminator:Discriminator model
     Vp: P waves
