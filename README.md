@@ -1,5 +1,6 @@
 # Elastic Full Waveform Inversion (FWI) using Physics-Informed GAN & FNO
 Imagine peering inside the Earth to predict earthquakes or find hidden resources, like a medical scanner for our planet. This project analyzes seismic waves the vibrations from earthquakes or other sources to map the Earth's subsurface. By transforming complex seismic data into clear images of underground properties, our model helps predict earthquakes, locate oil and gas, and support clean energy solutions.
+
 This repository implements a **Physics-Informed Generative Adversarial Network (GAN)** for **Elastic Full Waveform Inversion (FWI)**. It combines a **U-Net Generator**, a **Wasserstein Discriminator**, and a **Fourier Neural Operator (FNO)** based **Elastic Wave Solver**. The pipeline is designed for reconstructing sub-surface Earth properties (e.g., Vp, Vs, ρ) from seismic waveforms (u_x, u_z).
 
 ---
@@ -108,7 +109,7 @@ Each sample consists of:
 
 | File         | Shape            | Description      |
 | ------------ | ---------------- | ---------------- |
-| data_x_i.npy | [B, 5, 1000, 70] | uₓ waveform     |
+| data_x_i.npy | [B, 5, 1000, 70] | u_x waveform     |
 | data_z_i.npy | [B, 5, 1000, 70] | u_z waveform     |
 | vp_i.npy     | [B, 1, 70, 70]   | P-wave velocity  |
 | vs_i.npy     | [B, 1, 70, 70]   | S-wave velocity  |
@@ -117,18 +118,18 @@ Each sample consists of:
 | pm_i.npy     | [B, 1, 70, 70]   | Young’s modulus |
 
 Inputs to the Generator: u_x + u_z → [B, 10, 1000, 70]
+
 Outputs from Generator: [B, 5, 70, 70] → input to FNO for waveform reconstruction
 
 ---
 ### Use Cases
-The subsurface property images ($ V_p $, $ V_s $, density, etc.) enable multiple applications:
+The subsurface property images ( V_p ,  V_s , density, etc.) enable multiple applications:
 
 - **Earthquake Prediction**: Identifies fault zones and stress regimes for seismic hazard assessment.
 - **Oil and Gas Exploration**: Maps reservoir properties for drilling optimization.
 - **Geothermal Energy**: Detects subsurface thermal structures for resource evaluation.
 - **Carbon Sequestration**: Assesses storage site integrity using density and elastic moduli.
 - **Infrastructure Planning**: Evaluates ground stability for construction by analyzing Poisson’s ratio and Young’s modulus.
-- **The Spectrogram Converter**: (output: [B, 1, 1000, 70]) enhances these by providing frequency-domain features, reducing cycle-skipping in FWI.
 
 
 ---
