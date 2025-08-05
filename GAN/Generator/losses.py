@@ -18,7 +18,7 @@ def data_misfit(predicted_waveform, observed_waveform):
     """
     return torch.nn.functional.mse_loss(predicted_waveform, observed_waveform)
   
-def generator_loss(Discriminator, fake_samples, waveform_pred, waveform_obs,lambda_data=1.):
+def generator_loss(Discriminator, fake_samples, waveform_pred, waveform_obs, lambda_data=1.):
     """Computes total Generator Loss
 
     Args:

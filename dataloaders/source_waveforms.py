@@ -36,8 +36,8 @@ class source_info(torch.utils.data.Dataset):
     
 def dataloader_source_waveforms(batch_size=16, num_workers=4, shuffle=True):
     dataset = source_info(dir="data/source_info",
-                          start_index=41,
-                          end_index=60)
+                          start_index=1,
+                          end_index=20)
     dataloader = torch.utils.data.DataLoader(dataset=dataset,
                                              batch_size=batch_size,
                                              num_workers=num_workers,

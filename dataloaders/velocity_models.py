@@ -42,8 +42,8 @@ class velocity_models(torch.utils.data.Dataset):
     
 def dataloader_velocity_models(batch_size=16, num_workers=4, shuffle=True):
     dataset = velocity_models(dir="data/velocity_models",
-                              start_index = 41,
-                              end_index = 60)
+                              start_index = 101,
+                              end_index = 108)
     dataloader = torch.utils.data.DataLoader(dataset=dataset,
                                              batch_size=batch_size,
                                              num_workers=num_workers,

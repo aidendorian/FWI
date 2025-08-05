@@ -47,24 +47,23 @@ def pde_res(u, Vp, Vs, density, dx=1., dt=1.):
     residual = density_cropped.unsqueeze(1)*utt_cropped-f
     return torch.mean(residual**2)
 
-def loss(pred_value,obs_value):
+def loss(pred_value, obs_value):
      """Args:
-        pred_vale:predicted value by FNO
-        obs_value: observed value from the data
+        pred_vale : predicted value by FNO
+        obs_value : observed value from the data
         """
-     return torch.nn.functional.mse_loss(pred_value,obs_value)
+     return torch.nn.functional.mse_loss(pred_value, obs_value)
 
-def FNO_loss(Vp,Vs,density,value_pred,value_obs,lambda_data=1.0,lambda_pde=1.0):
+def FNO_loss(Vp, Vs, density, value_pred, value_obs, lambda_data=1.0, lambda_pde=1.0):
     """Args:
-    Discriminator:Discriminator model
-    Vp: P waves
-    Vs: S waves
-    Density: DENSITY
-    value_pred: pred_value in passive voice
-    value_obs: pred_obs in passive voice
+    Discriminator : Discriminator model
+    Vp : P waves
+    Vs : S waves
+    Density : Calculated Density
+    value_pred : Predicted value from the FNO
+    value_obs : Observed value from the Earth data
     lambda_pde : PDE weight. Defaults to 1.0
-    LET THE RECORDS SHOW THAT I KNOW MY COMMENTS ARE UNPROFESSIONAL.
     """
-    L_data=loss(value_pred,value_obs)
-    L_pde=pde_res(value_pred,Vp,Vs,density)
-    return L_data*lambda_data+L_pde*lambda_pde
+    L_data = loss(value_pred, value_obs)
+    L_pde = pde_res(value_pred, Vp, Vs, density)
+    return L_data*lambda_data + L_pde*lambda_pde
