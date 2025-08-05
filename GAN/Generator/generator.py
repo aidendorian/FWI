@@ -1,5 +1,15 @@
 import torch
 
+# Applies a 2D convolution over an input signal composed of several input planes.
+
+# Multi-scale Feature Extraction: Downsampling captures global context and high-level features
+# Precise Localization: Skip connections preserve fine-grained spatial information that would otherwise be lost during downsampling
+# Best of Both Worlds: The decoder gets both:
+
+# High-level semantic information from the bottleneck
+# Low-level spatial details from the skip connections
+
+
 class DownSample(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -9,7 +19,12 @@ class DownSample(torch.nn.Module):
                       kernel_size=(4, 1),
                       stride=(2, 1),
                       padding=(1, 0)),
+
+# Applies Batch Normalization over a 4D input.
+# 4D is a mini-batch of 2D inputs with additional channel dimension.
             torch.nn.BatchNorm2d(out_channels),
+
+# 0.2 is the negative slope for the LeakyReLU activation
             torch.nn.LeakyReLU(0.2, inplace=True)
         )
 
