@@ -61,7 +61,7 @@ def download_file(service, file_id, file_name, download_path):
         print(f"✗ Error downloading {file_name}: {str(e)}")
         return False
 
-def download_cfb_files(start_index, end_index, download_path="./source_info"):
+def download_cfb_files(start_index, end_index, download_path="./test/source_info/"):
     """
     Download data_x_{i} and data_z_{i} files for indices from start_index to end_index.
     
@@ -92,8 +92,8 @@ def download_cfb_files(start_index, end_index, download_path="./source_info"):
     total_files = 0
     
     for i in range(start_index, end_index + 1):
-        data_x_filename = f"pm_{i}.npy"
-        data_z_filename = f"pr_{i}.npy"
+        data_x_filename = f"data_x_{i}.npy"
+        data_z_filename = f"data_z_{i}.npy"
         
         if data_x_filename in file_mapping:
             total_files += 1
