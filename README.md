@@ -23,31 +23,45 @@ This repository implements a **Physics-Informed Generative Adversarial Network (
         └── 📁source_info
             ├── data_x_i.npy
             ├── data_z_i.npy
+            ├── data.md
+        └── 📁test
+            └── 📁source_info
+                ├── data_x_i.npy
+                ├── data_z_i.npy
+            └── 📁velocity_models
+                ├── density_i.npy
+                ├── pm_i.npy
+                ├── pr_i.npy
+                ├── vp_i.npy
+                ├── vs_i.npy
         └── 📁velocity_models
+            ├── add_density.py
+            ├── data.md
             ├── density_i.npy
             ├── pm_i.npy
+            ├── pr_i.npy
             ├── vp_i.npy
             ├── vs_i.npy
-            ├── pr_i.npy
+        ├── download.py
     └── 📁dataloaders
-        └── 📁__pycache__
-            ├── source_waveforms.cpython-312.pyc
-            ├── velocity_models.cpython-312.pyc
+        ├── __init__.py
         ├── source_waveforms.py
         ├── velocity_models.py
     └── 📁FNO
+        ├── __init__.py
         ├── fno.py
+        ├── losses.py
     └── 📁GAN
         └── 📁Discriminator
-            └── 📁__pycache__
-                ├── discriminator.cpython-312.pyc
             ├── discriminator.py
             ├── losses.py
         └── 📁Generator
-            └── 📁__pycache__
-                ├── generator.cpython-312.pyc
             ├── generator.py
             ├── losses.py
+        ├── __init__.py
+    └── 📁Training
+        ├── fno_training.py
+        ├── GAN_training.py
     ├── generator_model.png
     └── README.md
 ```
