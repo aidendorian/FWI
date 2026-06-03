@@ -1,65 +1,89 @@
 import torch
-import logging
-from dataloaders.source_waveforms import dataloader_source_waveforms
-from dataloaders.velocity_models import dataloader_velocity_models
-from FNO.losses import FNO_loss
-from FNO.fno import ElasticWaveSolver
+import os
 from tqdm.auto import tqdm
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from dataloaders.source_waveforms import source_info
+from dataloaders.velocity_models import velocity_models
+from FNO.losses import FNO_loss
+from FNO.fno import ElasticWaveSolver
 
-# Initial setup validation
-print("=== TRAINING SETUP ===")
-true_vel = dataloader_velocity_models()
-true_src = dataloader_source_waveforms()
-print(f"Dataloaders loaded - Vel: {len(true_vel) if hasattr(true_vel, '__len__') else 'Unknown'}, Src: {len(true_src) if hasattr(true_src, '__len__') else 'Unknown'}")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+EPOCHS = 50
+BATCH_SIZE = 8
+LR = 3e-4
+GRAD_CLIP = 1.0
+LAMBDA_DATA = 1.0
+LAMBDA_PDE  = 0.1
+CHECKPOINT_DIR = "checkpoints"
+CHECKPOINT_EVERY = 5
 
-epochs = 5
-batch_size = 16
-model = ElasticWaveSolver().to("cuda")
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
-print(f"Model: {sum(p.numel() for p in model.parameters())} parameters, LR: {optimizer.param_groups[0]['lr']}")
+train_vel = velocity_models(dir="data/velocity_models",
+                            start_index=41,
+                            end_index=60)
+train_src = source_info(dir="data/source_info",
+                        start_index=41,
+                        end_index=60)
 
-# Training loop
-for epoch in range(epochs):
-    model.train()
-    total_loss = 0
-    
-    for batch_idx, (vel, src) in enumerate(tqdm(zip(true_vel, true_src), desc=f"Epoch {epoch+1}")):
-        x, y = vel.to("cuda"), src.to("cuda")
-        
-        # Debug first batch of first epoch only
-        if epoch == 0 and batch_idx == 0:
-            print(f"First batch shapes - x: {x.shape}, y: {y.shape}")
-            print(f"Input ranges - x: [{torch.min(x):.3f}, {torch.max(x):.3f}], y: [{torch.min(y):.3f}, {torch.max(y):.3f}]")
-        
-        pred_vel = model(x)
-        
-        Vp = x[:, 0:1, :, :]
-        Vs = x[:, 1:2, :, :]
-        rho = x[:, 2:3, :, :]
-        
-        loss = FNO_loss(Vp, Vs, rho, pred_vel, y)
-        
-        # Check for problematic losses
-        if torch.isnan(loss) or torch.isinf(loss):
-            print(f"WARNING: Invalid loss at epoch {epoch+1}, batch {batch_idx+1}: {loss.item()}")
-            logger.warning(f"Invalid loss detected at epoch {epoch+1}, batch {batch_idx+1}")
-        
-        optimizer.zero_grad()
-        loss.backward()
-        
-        # Monitor gradients for first few batches
-        if batch_idx < 3:
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float('inf'))
-            if grad_norm > 10.0:
-                print(f"Large gradient norm at epoch {epoch+1}, batch {batch_idx+1}: {grad_norm:.3f}")
-        
-        optimizer.step()
-        total_loss += loss.item()
-    
-    avg_loss = total_loss / len(true_src)
-    print(f"Epoch {epoch + 1}/{epochs} | Avg Loss: {avg_loss:.6f}")
-    logger.info(f"Epoch {epoch+1} completed - Avg Loss: {avg_loss:.6f}")
+val_vel = velocity_models(dir="data/test/velocity_models",
+                          start_index=101,
+                          end_index=108)
+val_src = source_info(dir="data/test/source_info",
+                      start_index=101,
+                      end_index=108)
+
+model = ElasticWaveSolver().to(DEVICE)
+optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-5)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+
+n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def run_epoch(vel_loader, src_loader, train: bool):
+
+    model.train() if train else model.eval()
+    total_loss   = 0.
+    n_batches    = 0
+    ctx = torch.enable_grad() if train else torch.no_grad()
+
+    with ctx:
+        for vel, src in tqdm(zip(vel_loader, src_loader), total=min(len(vel_loader), len(src_loader)), desc="train" if train else "val", leave=False,):
+            vel = vel.to(DEVICE)
+            src = src.to(DEVICE)
+
+            Vp = vel[:, 0:1, :, :]
+            Vs = vel[:, 1:2, :, :]
+            density = vel[:, 2:3, :, :]
+
+            pred = model(vel)
+            loss = FNO_loss(Vp, Vs, density, pred, src, lambda_data=LAMBDA_DATA, lambda_pde=LAMBDA_PDE)
+
+            if train:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            total_loss += loss.item()
+            n_batches  += 1
+
+    return total_loss / max(n_batches, 1)
+
+
+best_val_loss = float('inf')
+
+for epoch in range(1, EPOCHS + 1):
+    train_loss = run_epoch(train_vel, train_src, train=True)
+    val_loss   = run_epoch(val_vel,   val_src,   train=False)
+
+    scheduler.step(val_loss)
+
+    if epoch % CHECKPOINT_EVERY == 0 or val_loss < best_val_loss:
+        tag = "best" if val_loss < best_val_loss else f"epoch{epoch:03d}"
+        path = os.path.join(CHECKPOINT_DIR, f"fno_{tag}.pt")
+        torch.save({"epoch": epoch,
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "val_loss": val_loss,
+                    "train_loss": train_loss,}, path)
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
