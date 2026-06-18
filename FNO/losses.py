@@ -1,50 +1,62 @@
-import torch
-from torch.nn import functional as f
+from torch.nn import functional as F
 
 def pde_res(u, Vp, Vs, density, dx=1., dt=1.):
-    ux = u[:, :5, :, :]
-    uz = u[:, 5:, :, :]
+    B, C, H, W = u.shape
+    nt = C // 2
+    ux = u[:, :nt, :, :]
+    uz = u[:, nt:, :, :]
 
-    utt_x = (ux[:, :, 2:, :] - 2.*ux[:, :, 1:-1, :] + ux[:, :, :-2, :])/(dt**2)
-    utt_z = (uz[:, :, 2:, :] - 2.*uz[:, :, 1:-1, :] + uz[:, :, :-2, :])/(dt**2)
-    
-    i_ux = ux[:, :, 1:-1, :]
-    i_uz = uz[:, :, 1:-1, :]
-    
-    dux_dx = (i_ux[:, :, 2:, :] -i_ux[:, :, :-2, :])/(2.*dx)
-    duz_dx = (i_uz[:, :, 2:, :] -i_uz[:, :, :-2, :])/(2.*dx)
-    
-    dux_dz = ((ux[:, :, 2:, :] - ux[:, :, :-2, :])/(2.*dx))[:, :, :, 1:-1]
-    duz_dz = ((uz[:, :, 2:, :] - uz[:, :, :-2, :])/(2.*dx))[:, :, :, 1:-1]
-    
-    mu  = (density * Vs ** 2).squeeze(1)
-    lam = (density * (Vp**2 - 2*Vs**2)).squeeze(1)
-    
-    mu_r  = mu[:, :1, 1:-1].unsqueeze(1)
-    lam_r = lam[:, :1, 1:-1].unsqueeze(1)
-    
-    sigma_xx = (lam_r + 2 * mu_r) * dux_dx + lam_r * duz_dz
-    sigma_zz = (lam_r + 2 * mu_r) * duz_dz + lam_r * dux_dx
-    sigma_xz = mu_r * (dux_dz + duz_dx)
-    
-    div_sigma_x = ((sigma_xx[..., 2:] - sigma_xx[..., :-2])/(2.*dx))[:, :, 1:-1, :] + ((sigma_xz[:, :, 2:, :]-sigma_xz[:, :, :-2, :])/(2.*dx))[:, :, :, 1:-1]
-    div_sigma_z = ((sigma_xz[..., 2:] - sigma_xz[..., :-2])/(2.*dx))[:, :, 1:-1, :] + ((sigma_zz[:, :, 2:, :]-sigma_zz[:, :, :-2, :])/(2.*dx))[:, :, :, 1:-1]
-    
-    utt_x_trim = utt_x[:, :, 1:-1, 1:-1]
-    utt_z_trim = utt_z[:, :, 1:-1, 1:-1]
- 
-    rho_r = density.squeeze(1)[:, :1, 1:-1].unsqueeze(1)[:, :, :, 1:-1]
- 
-    res_x = rho_r * utt_x_trim - div_sigma_x
-    res_z = rho_r * utt_z_trim - div_sigma_z
- 
-    residual_loss = (res_x ** 2 + res_z ** 2).mean()
- 
-    return residual_loss
+    Vp_up = F.interpolate(Vp, size=(H, W), mode='bilinear', align_corners=False)
+    Vs_up = F.interpolate(Vs, size=(H, W), mode='bilinear', align_corners=False)
+    density_up = F.interpolate(density, size=(H, W), mode='bilinear', align_corners=False)
 
+    if Vp_up.dim() == 3:
+        Vp_up = Vp_up.unsqueeze(1)
+        Vs_up = Vs_up.unsqueeze(1)
+        density_up = density_up.unsqueeze(1)
+
+    ux_tt = (ux[:, 2:, :, :] - 2 * ux[:, 1:-1, :, :] + ux[:, :-2, :, :]) / (dt**2)
+    uz_tt = (uz[:, 2:, :, :] - 2 * uz[:, 1:-1, :, :] + uz[:, :-2, :, :]) / (dt**2)
+
+    ux_t = ux[:, 1:-1, :, :]
+    uz_t = uz[:, 1:-1, :, :]
+
+    def deriv_x(f):
+        padded = F.pad(f, (0, 0, 1, 1), mode='constant', value=0)
+        return (padded[:, :, 2:, :] - padded[:, :, :-2, :]) / (2 * dx)
+
+    def deriv_z(f):
+        padded = F.pad(f, (1, 1, 0, 0), mode='constant', value=0)
+        return (padded[:, :, :, 2:] - padded[:, :, :, :-2]) / (2 * dx)
+
+    dux_dx = deriv_x(ux_t)
+    dux_dz = deriv_z(ux_t)
+    duz_dx = deriv_x(uz_t)
+    duz_dz = deriv_z(uz_t)
+
+    mu = density_up * Vs_up ** 2
+    lam = density_up * (Vp_up ** 2 - 2 * Vs_up ** 2)
+
+    sigma_xx = (lam + 2 * mu) * dux_dx + lam * duz_dz
+    sigma_zz = (lam + 2 * mu) * duz_dz + lam * dux_dx
+    sigma_xz = mu * (dux_dz + duz_dx)
+
+    div_sigma_x = deriv_x(sigma_xx) + deriv_z(sigma_xz)
+    div_sigma_z = deriv_x(sigma_xz) + deriv_z(sigma_zz)
+
+    crop = 2
+    ux_tt_trim = ux_tt[:, :, crop:-crop, crop:-crop]
+    uz_tt_trim = uz_tt[:, :, crop:-crop, crop:-crop]
+    div_sigma_x_trim = div_sigma_x[:, :, crop:-crop, crop:-crop]
+    div_sigma_z_trim = div_sigma_z[:, :, crop:-crop, crop:-crop]
+    rho_trim = density_up[:, :, crop:-crop, crop:-crop]
+
+    res_x = rho_trim * ux_tt_trim - div_sigma_x_trim
+    res_z = rho_trim * uz_tt_trim - div_sigma_z_trim
+    return (res_x ** 2 + res_z ** 2).mean()
 
 def loss(pred_value,obs_value):
-     mse_loss = f.mse_loss(pred_value,obs_value)
+     mse_loss = F.mse_loss(pred_value,obs_value)
      return mse_loss
 
 def FNO_loss(Vp,Vs,density,value_pred,value_obs,lambda_data=1.0,lambda_pde=0.1):
