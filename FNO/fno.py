@@ -24,12 +24,15 @@ class SpectralConv2d(Module):
         
     def forward(self, x):
         B, _, H, W = x.shape
+        orig_dtype = x.dtype
+        x = x.float()
         x_ft = rfft2(x, norm="ortho")
         out_ft = torch.zeros(B, self.out_channels, H, W//2+1, dtype=torch.cfloat, device=x.device)
         out_ft[:, :, :self.modes_x, :self.modes_y] = torch.einsum("bixy,ioxy->boxy",
                                                                   x_ft[:, :, :self.modes_x, :self.modes_y],
                                                                   self.weights)
         x = irfft2(out_ft, s=(H, W), norm="ortho")
+        x = x.to(orig_dtype)
         return x
     
 class FNOBlock(Module):
@@ -51,7 +54,7 @@ class FNOBlock(Module):
         return x + res
     
 class ElasticWaveSolver(Module):
-    def __init__(self, in_channels=5, out_channels=10, width=256, x_modes=32, y_modes=24, depth=6):
+    def __init__(self, in_channels=5, out_channels=10, width=128, x_modes=16, y_modes=12, depth=4):
         super().__init__()
         self.padding = ReflectionPad2d((4, 4, 8, 8))
         self.input_projection = Sequential(
