@@ -1,89 +1,117 @@
 import torch
 import os
 from tqdm.auto import tqdm
-
-from dataloaders.source_waveforms import source_info
-from dataloaders.velocity_models import velocity_models
+from torch.amp.autocast_mode import autocast
+from dataloaders.dataloader import make_train_loader, make_val_loader
 from FNO.losses import FNO_loss
 from FNO.fno import ElasticWaveSolver
+from Training.checkpoint import load_checkpoint, save_checkpoint
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 EPOCHS = 50
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 LR = 3e-4
 GRAD_CLIP = 1.0
 LAMBDA_DATA = 1.0
-LAMBDA_PDE  = 0.1
-CHECKPOINT_DIR = "checkpoints"
-CHECKPOINT_EVERY = 5
+LAMBDA_PDE = 1e-4
+CHECKPOINT_DIR = "Training/checkpoints"
+RESUME_PATH = "Training/checkpoints/fno_epoch12.pt"
+CHECKPOINT_EVERY = 1
+VAL_EVERY = 5
+RESUME = True
 
-train_vel = velocity_models(dir="data/velocity_models",
-                            start_index=41,
-                            end_index=60)
-train_src = source_info(dir="data/source_info",
-                        start_index=41,
-                        end_index=60)
+VP_MIN, VP_MAX  = 1500.0, 4500.0
+VS_MIN, VS_MAX  = 612.0, 3000.0
+RHO_MIN, RHO_MAX = 1.0, 3.0
+SRC_MIN, SRC_MAX = -3.5,   3.5
 
-val_vel = velocity_models(dir="data/test/velocity_models",
-                          start_index=101,
-                          end_index=108)
-val_src = source_info(dir="data/test/source_info",
-                      start_index=101,
-                      end_index=108)
+def normalize_vel(vel):
+    vel = vel.clone()
+    vel[:, 0:1] = 2.0*(vel[:, 0:1]- VP_MIN)/ (VP_MAX-VP_MIN)-1.0
+    vel[:, 1:2] = 2.0*(vel[:, 1:2]- VS_MIN)/(VS_MAX-VS_MIN)-1.0
+    vel[:, 2:3] = 2.0*(vel[:, 2:3]- RHO_MIN) / (RHO_MAX-RHO_MIN)-1.0
+    return vel
 
-model = ElasticWaveSolver().to(DEVICE)
+def normalize_src(src):
+    return 2.0 * (src - SRC_MIN) / (SRC_MAX - SRC_MIN) - 1.0
+
+# os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+train_loader = make_train_loader(batch_size=BATCH_SIZE)
+val_loader   = make_val_loader(batch_size=BATCH_SIZE)
+
+model     = ElasticWaveSolver().to(DEVICE)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-5)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
 n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print(f"{n_params/1e6:.1f}M parameters")
 
-def run_epoch(vel_loader, src_loader, train: bool):
+start_epoch = 0
+if RESUME:
+    start_epoch = load_checkpoint(RESUME_PATH, model, optimizer, scheduler)
 
-    model.train() if train else model.eval()
-    total_loss   = 0.
-    n_batches    = 0
-    ctx = torch.enable_grad() if train else torch.no_grad()
+for epoch in range(start_epoch + 1, EPOCHS + 1):
+    total_batches = len(train_loader)
+    pbar = tqdm(total=total_batches, desc=f"Epoch {epoch:02d}/{EPOCHS}", dynamic_ncols=True)
 
-    with ctx:
-        for vel, src in tqdm(zip(vel_loader, src_loader), total=min(len(vel_loader), len(src_loader)), desc="train" if train else "val", leave=False,):
-            vel = vel.to(DEVICE)
-            src = src.to(DEVICE)
+    model.train()
+    train_loss_sum = 0.
+    for i, (src, vel) in enumerate(train_loader):
+        src = src.to(DEVICE)
+        vel = vel.to(DEVICE)
+        vel_norm = normalize_vel(vel)
 
-            Vp = vel[:, 0:1, :, :]
-            Vs = vel[:, 1:2, :, :]
-            density = vel[:, 2:3, :, :]
+        Vp = vel[:, 0:1]
+        Vs = vel[:, 1:2]
+        density = vel[:, 2:3]
 
-            pred = model(vel)
-            loss = FNO_loss(Vp, Vs, density, pred, src, lambda_data=LAMBDA_DATA, lambda_pde=LAMBDA_PDE)
+        with autocast(device_type="cuda", dtype=torch.bfloat16):
+            pred = model(vel_norm)
+            loss = FNO_loss(Vp, Vs, density, pred, src,
+                            lambda_data=LAMBDA_DATA, lambda_pde=LAMBDA_PDE)
 
-            if train:
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
+        optimizer.step()
 
-            total_loss += loss.item()
-            n_batches  += 1
+        train_loss_sum += loss.item()
+        pbar.set_postfix(phase="train", loss=f"{loss.item():.4f}", avg=f"{train_loss_sum/(i+1):.4f}")
+        pbar.update(1)
 
-    return total_loss / max(n_batches, 1)
+    train_loss = train_loss_sum / len(train_loader)
 
+    if epoch % VAL_EVERY == 0:
+        model.eval()
+        val_loss_sum = 0.
+        with torch.no_grad():
+            for i, (src, vel) in enumerate(val_loader):
+                src = src.to(DEVICE)
+                vel = vel.to(DEVICE)
+                vel_norm = normalize_vel(vel)
 
-best_val_loss = float('inf')
+                Vp = vel[:, 0:1]
+                Vs = vel[:, 1:2]
+                density = vel[:, 2:3]
 
-for epoch in range(1, EPOCHS + 1):
-    train_loss = run_epoch(train_vel, train_src, train=True)
-    val_loss   = run_epoch(val_vel,   val_src,   train=False)
+                with autocast(device_type="cuda", dtype=torch.bfloat16):
+                    pred = model(vel_norm)
+                    loss = FNO_loss(Vp, Vs, density, pred, src,
+                                    lambda_data=LAMBDA_DATA, lambda_pde=LAMBDA_PDE)
 
-    scheduler.step(val_loss)
+                val_loss_sum += loss.item()
+                pbar.set_postfix(phase="val", loss=f"{loss.item():.4f}", avg=f"{val_loss_sum/(i+1):.4f}")
+                pbar.update(1)
 
-    if epoch % CHECKPOINT_EVERY == 0 or val_loss < best_val_loss:
-        tag = "best" if val_loss < best_val_loss else f"epoch{epoch:03d}"
-        path = os.path.join(CHECKPOINT_DIR, f"fno_{tag}.pt")
-        torch.save({"epoch": epoch,
-                    "model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict(),
-                    "val_loss": val_loss,
-                    "train_loss": train_loss,}, path)
+        val_loss = val_loss_sum / len(val_loader)
+        scheduler.step(val_loss)
+        pbar.set_postfix(train=f"{train_loss:.4f}", val=f"{val_loss:.4f}")
+    else:
+        pbar.set_postfix(train=f"{train_loss:.4f}")
 
-    if val_loss < best_val_loss:
-        best_val_loss = val_loss
+    pbar.close()
+
+    if epoch % CHECKPOINT_EVERY == 0:
+        save_checkpoint(os.path.join(CHECKPOINT_DIR, f"fno_epoch{epoch}.pt"),
+                        epoch, model, optimizer, scheduler, train_loss)

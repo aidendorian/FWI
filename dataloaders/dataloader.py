@@ -19,8 +19,8 @@ class CombinedDataset(Dataset):
         return self.src[idx], self.vel[idx]
 
 def make_train_loader(batch_size: int = 8, num_workers: int = 2) -> DataLoader:
-    ds = CombinedDataset(src_dataset=source_info(data_dir="data/source_info", start_index=41, end_index=60),
-                         vel_dataset=velocity_models(data_dir="data/velocity_models", start_index=41, end_index=60))
+    ds = CombinedDataset(src_dataset=source_info(data_dir="data/cfa/source_info", start_index=41, end_index=60),
+                         vel_dataset=velocity_models(data_dir="data/cfa/velocity_models", start_index=41, end_index=60))
     return DataLoader(ds,
                       batch_size=batch_size,
                       shuffle=True,
@@ -29,8 +29,8 @@ def make_train_loader(batch_size: int = 8, num_workers: int = 2) -> DataLoader:
  
  
 def make_val_loader(batch_size: int = 8, num_workers: int = 2) -> DataLoader:
-    ds = CombinedDataset(src_dataset=source_info(data_dir="data/test/source_info", start_index=101, end_index=108),
-                         vel_dataset=velocity_models(data_dir="data/test/velocity_models", start_index=101, end_index=108))
+    ds = CombinedDataset(src_dataset=source_info(data_dir="data/test/cfa/source_info", start_index=101, end_index=108),
+                         vel_dataset=velocity_models(data_dir="data/test/cfa/velocity_models", start_index=101, end_index=108))
     return DataLoader(ds, batch_size=batch_size,
                       shuffle=False,
                       num_workers=num_workers,

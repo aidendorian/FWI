@@ -1,141 +1,173 @@
 import os
 import sys
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from googleapiclient.discovery import build
-from google.oauth2 import service_account
-import io
 from googleapiclient.http import MediaIoBaseDownload
+from google.oauth2 import service_account
 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
-FOLDER_ID = '1GOX2sLHVNgaFZ8QtBuLUYioz33kzbjl2'
+FOLDERS = {
+    "cfa_train": {
+        "source":   "1epsIb6QLHcd5UOLTaTEGh3trECFNim9O",
+        "velocity": "1epsIb6QLHcd5UOLTaTEGh3trECFNim9O",
+    },
+    "cfa_test": {
+        "source":   "1epsIb6QLHcd5UOLTaTEGh3trECFNim9O",
+        "velocity": "1epsIb6QLHcd5UOLTaTEGh3trECFNim9O",
+    }
+}
 
-def authenticate_gdrive_service_account():
-    """Authenticate using service account and return Google Drive service object."""
-    try:
-        credentials = service_account.Credentials.from_service_account_file(
-            'service-account-key.json', scopes=SCOPES)
-        print("Service account authentication successful!")
-        return build('drive', 'v3', credentials=credentials)
-    except Exception as e:
-        print(f"Service account authentication failed: {e}")
-        print("Make sure 'service-account-key.json' exists and is valid.")
-        sys.exit(1)
+SOURCE_FILES   = ["data_x", "data_z"]
+VELOCITY_FILES = ["vp", "vs", "pm", "pr"]
 
-def get_files_in_folder(service, folder_id):
-    """Get all files in the specified folder."""
-    try:
-        results = service.files().list(
+OUTPUT_DIRS = {
+    "cfa_train": {
+        "source":   "data/cfa/source_info",
+        "velocity": "data/cfa/velocity_models",
+    },
+    "cfa_test": {
+        "source":   "data/test/cfa/source_info",
+        "velocity": "data/test/cfa/velocity_models",
+    }
+}
+
+# ── Tuning knobs ────────────────────────────────────────────────────────────
+MAX_WORKERS  = 6        # concurrent downloads; raise to 8-10 if CPU/RAM allow
+CHUNK_SIZE   = 32 * 1024 * 1024   # 32 MB chunks (default is 10 MB)
+# ────────────────────────────────────────────────────────────────────────────
+
+print_lock = threading.Lock()
+
+def safe_print(*args, **kwargs):
+    with print_lock:
+        print(*args, **kwargs)
+
+
+def authenticate():
+    creds = service_account.Credentials.from_service_account_file(
+        'data/service-account-key.json', scopes=SCOPES)
+    return build('drive', 'v3', credentials=creds)
+
+
+def make_service():
+    """Each thread needs its own service instance (not thread-safe to share)."""
+    creds = service_account.Credentials.from_service_account_file(
+        'data/service-account-key.json', scopes=SCOPES)
+    return build('drive', 'v3', credentials=creds)
+
+
+def get_file_mapping(service, folder_id):
+    mapping = {}
+    page_token = None
+    while True:
+        resp = service.files().list(
             q=f"'{folder_id}' in parents",
             pageSize=1000,
-            fields="nextPageToken, files(id, name)"
+            fields="nextPageToken, files(id, name)",
+            pageToken=page_token
         ).execute()
-        
-        items = results.get('files', [])
-        return items
-    except Exception as e:
-        print(f"Error fetching files: {e}")
-        print("Make sure the service account has access to the folder.")
-        print("The folder owner needs to share it with the service account email.")
-        return []
+        for f in resp.get('files', []):
+            mapping[f['name']] = f['id']
+        page_token = resp.get('nextPageToken')
+        if not page_token:
+            break
+    return mapping
 
-def download_file(service, file_id, file_name, download_path):
-    """Download a file from Google Drive."""
+
+def download_file(file_id, file_name, download_path):
+    dest = os.path.join(download_path, file_name)
+    tmp  = dest + ".tmp"          # write to .tmp, rename on success
+    if os.path.exists(dest):
+        safe_print(f"  skip (exists): {file_name}")
+        return file_name, True, 0.0
+
+    service = make_service()
     try:
         request = service.files().get_media(fileId=file_id)
-        file_io = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_io, request)
-        
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-            print(f"Download progress for {file_name}: {int(status.progress() * 100)}%")
-        
-        file_path = os.path.join(download_path, file_name)
-        with open(file_path, 'wb') as f:
-            f.write(file_io.getvalue())
-        
-        print(f"✓ Downloaded: {file_name}")
-        return True
-    
-    except Exception as e:
-        print(f"✗ Error downloading {file_name}: {str(e)}")
-        return False
+        start   = time.time()
 
-def download_cfb_files(start_index, end_index, download_path="./test/source_info/"):
-    """
-    Download data_x_{i} and data_z_{i} files for indices from start_index to end_index.
-    
-    Args:
-        start_index (int): Starting index (inclusive)
-        end_index (int): Ending index (inclusive)
-        download_path (str): Local path to save downloaded files
-    """
-    
-    os.makedirs(download_path, exist_ok=True)
-    
-    print("Authenticating with Google Drive using service account...")
-    service = authenticate_gdrive_service_account()
-    
-    print("Fetching file list from Google Drive folder...")
-    all_files = get_files_in_folder(service, FOLDER_ID)
-    
-    if not all_files:
-        print("No files found in the folder.")
-        return
-    
-    file_mapping = {file['name']: file['id'] for file in all_files}
-    
-    print(f"Found {len(all_files)} files in the folder.")
-    print(f"Downloading data_x and data_z files for indices {start_index} to {end_index}...")
-    
-    success_count = 0
-    total_files = 0
-    
-    for i in range(start_index, end_index + 1):
-        data_x_filename = f"data_x_{i}.npy"
-        data_z_filename = f"data_z_{i}.npy"
-        
-        if data_x_filename in file_mapping:
-            total_files += 1
-            if download_file(service, file_mapping[data_x_filename], data_x_filename, download_path):
-                success_count += 1
-        else:
-            print(f"⚠ File not found: {data_x_filename}")
-        
-        if data_z_filename in file_mapping:
-            total_files += 1
-            if download_file(service, file_mapping[data_z_filename], data_z_filename, download_path):
-                success_count += 1
-        else:
-            print(f"⚠ File not found: {data_z_filename}")
-    
-    print(f"\nDownload completed!")
-    print(f"Successfully downloaded: {success_count}/{total_files} files")
-    print(f"Files saved to: {os.path.abspath(download_path)}")
+        with open(tmp, 'wb') as f:
+            dl   = MediaIoBaseDownload(f, request, chunksize=CHUNK_SIZE)
+            done = False
+            while not done:
+                status, done = dl.next_chunk()
+                elapsed = time.time() - start
+                dl_mb   = status.resumable_progress / 1024 / 1024
+                speed   = dl_mb / elapsed if elapsed > 0 else 0
+                safe_print(f"  {file_name}: {int(status.progress()*100)}%  {speed:.1f} MB/s", end="\r")
+
+        os.rename(tmp, dest)      # atomic swap — no corrupt files on crash
+        elapsed = time.time() - start
+        size_mb = os.path.getsize(dest) / 1024 / 1024
+        safe_print(f"  ✓ {file_name} ({size_mb:.1f} MB in {elapsed:.1f}s — {size_mb/elapsed:.1f} MB/s)")
+        return file_name, True, size_mb
+
+    except Exception as e:
+        safe_print(f"  ✗ {file_name}: {e}")
+        if os.path.exists(tmp):
+            os.remove(tmp)        # clean up partial file
+        return file_name, False, 0.0
+
+
+def download(dataset, split, start_index, end_index):
+    key = f"{dataset}_{split}"
+    if key not in FOLDERS:
+        print(f"Unknown dataset/split: {key}. Options: {list(FOLDERS.keys())}")
+        sys.exit(1)
+
+    service = authenticate()
+    grand_start = time.time()
+    total_mb    = 0.0
+
+    for kind, prefixes in [("source", SOURCE_FILES), ("velocity", VELOCITY_FILES)]:
+        folder_id  = FOLDERS[key][kind]
+        output_dir = OUTPUT_DIRS[key][kind]
+        os.makedirs(output_dir, exist_ok=True)
+
+        print(f"\nFetching {kind} file list...")
+        mapping = get_file_mapping(service, folder_id)
+        print(f"Found {len(mapping)} files in folder.")
+
+        # Build the work queue
+        tasks = []
+        for i in range(start_index, end_index + 1):
+            for prefix in prefixes:
+                fname = f"{prefix}_{i}.npy"
+                if fname in mapping:
+                    tasks.append((mapping[fname], fname, output_dir))
+                else:
+                    print(f"  ⚠ not found: {fname}")
+
+        print(f"Downloading {len(tasks)} {kind} files with {MAX_WORKERS} workers…")
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+            futures = {
+                pool.submit(download_file, fid, fname, path): fname
+                for fid, fname, path in tasks
+            }
+            for fut in as_completed(futures):
+                _, ok, mb = fut.result()
+                if ok:
+                    total_mb += mb
+
+    elapsed = time.time() - grand_start
+    print(f"\n{'─'*50}")
+    print(f"Done: {total_mb:.1f} MB in {elapsed:.1f}s — avg {total_mb/elapsed:.1f} MB/s")
+
 
 def main():
-    """Main function with command line interface."""
-    if len(sys.argv) != 3:
-        print("Usage: python script.py <start_index> <end_index>")
-        print("Example: python script.py 1 10")
+    if len(sys.argv) != 5:
+        print("Usage: python download.py <dataset> <split> <start> <end>")
+        print("  dataset: cfa | cfb")
+        print("  split:   train | test")
+        print("  Example: python download.py cfa train 1 96")
         sys.exit(1)
-    
-    try:
-        start_index = int(sys.argv[1])
-        end_index = int(sys.argv[2])
-        
-        if start_index < 1 or end_index < 1 or start_index > end_index:
-            print("Error: Invalid index range. Both indices must be >= 1 and start_index <= end_index")
-            sys.exit(1)
-        
-        if end_index > 108:
-            print("Warning: end_index > 108. Based on your description, files might not exist beyond index 108.")
-        
-        download_cfb_files(start_index, end_index)
-        
-    except ValueError:
-        print("Error: Please provide valid integer indices.")
-        sys.exit(1)
+
+    download(sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]))
 
 if __name__ == "__main__":
     main()
+    

@@ -54,7 +54,7 @@ class FNOBlock(Module):
         return x + res
     
 class ElasticWaveSolver(Module):
-    def __init__(self, in_channels=5, out_channels=10, width=128, x_modes=16, y_modes=12, depth=4):
+    def __init__(self, in_channels=5, out_channels=10, width=160, x_modes=24, y_modes=18, depth=6):
         super().__init__()
         self.padding = ReflectionPad2d((4, 4, 8, 8))
         self.input_projection = Sequential(
